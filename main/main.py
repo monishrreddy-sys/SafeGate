@@ -15,12 +15,13 @@ from backend.database import (
     export_csv
 )
 from backend.diagnostic_engine import process_message
+from backend.serial_handler import SerialHandler
 import tkinter as tk
 from tkinter import messagebox
 
 # Create database automatically
 create_database()
-
+serial_handler = SerialHandler()
 root = tk.Tk()
 root.title("Safe-Gate Dashboard")
 root.geometry("900x700")  
@@ -31,30 +32,88 @@ root.config(bg="#f4f6f9")
 # =====================================================================
 
 def connect_device():
-    status_label.config(
-        text="Status: Connected",
-        fg="#27ae60"
-    )
-    diagnosis_button.config(state="normal")
 
-def run_diagnosis():
-    selected_message = diagnosis_var.get()
-    result = process_message(selected_message)
+    ports = serial_handler.list_available_ports()
 
-    # Update result display with matching background status cards
-    if result["status"] == "PASS":
-        result_label.config(text="🟢 PASS", fg="#27ae60", bg="#e8f8f5") # Light green tint
-    elif result["status"] == "FAIL":
-        result_label.config(text="🔴 FAIL", fg="#c0392b", bg="#f9ebea") # Light red tint
-    elif result["status"] == "CRITICAL":
-        result_label.config(text="🚨 CRITICAL", fg="#ffffff", bg="#922b21") # Dark crimson warning block
+    if not ports:
+
+        messagebox.showerror(
+            "Connection Error",
+            "No Arduino detected."
+        )
+
+        return
+
+    port = "COM9"
+
+    if serial_handler.connect(port):
+
+        status_label.config(
+            text=f"Status: Connected ({port})",
+            fg="#27ae60"
+        )
+
+        diagnosis_button.config(state="normal")
+
     else:
-        result_label.config(text=result["status"], fg="#2c3e50", bg="#f8f9fa")
 
-    problem_label.config(text=f"Problem: {result['problem']}")
-    suggestion_label.config(text=f"Suggestion: {result['suggestion']}")
-    
-    # Save result to database
+        messagebox.showerror(
+            "Connection Error",
+            f"Could not connect to {port}"
+        )
+def run_diagnosis():
+
+    message = serial_handler.read_message()
+
+    if not message:
+
+        messagebox.showwarning(
+            "No Data",
+            "No Arduino data received."
+        )
+
+        return
+
+    message_label.config(text=message)
+
+    result = process_message(message)
+
+    if result["status"] == "PASS":
+        result_label.config(
+            text="🟢 PASS",
+            fg="#27ae60",
+            bg="#e8f8f5"
+        )
+
+    elif result["status"] == "FAIL":
+        result_label.config(
+            text="🔴 FAIL",
+            fg="#c0392b",
+            bg="#f9ebea"
+        )
+
+    elif result["status"] == "CRITICAL":
+        result_label.config(
+            text="🚨 CRITICAL",
+            fg="#ffffff",
+            bg="#922b21"
+        )
+
+    else:
+        result_label.config(
+            text=result["status"],
+            fg="#2c3e50",
+            bg="#f8f9fa"
+        )
+
+    problem_label.config(
+        text=f"Problem: {result['problem']}"
+    )
+
+    suggestion_label.config(
+        text=f"Suggestion: {result['suggestion']}"
+    )
+
     save_log(result)
 
 def reset_dashboard():
@@ -62,7 +121,10 @@ def reset_dashboard():
     result_label.config(text="Result: Waiting...", fg="#7f8c8d", bg="#f8f9fa") # Reset card to neutral gray/white
     problem_label.config(text="Problem: None")
     suggestion_label.config(text="Suggestion: Waiting for diagnosis")
+    message_label.config(
+    text="Waiting for data...")
     diagnosis_button.config(state="disabled")
+    
 
 def export_logs():
     path = export_csv()
@@ -143,28 +205,25 @@ connect_button = tk.Button(
 )
 connect_button.pack(fill="x", pady=5)
 
-diagnosis_label = tk.Label(
+data_label = tk.Label(
     control_frame,
-    text="Select Diagnostic Scenario:",
+    text="Live Arduino Data",
     font=("Arial", 10),
     bg="white"
 )
-diagnosis_label.pack(pady=(20, 5), anchor="w")
 
-diagnosis_var = tk.StringVar()
-diagnosis_var.set("MSG: HEALTHY TRACK")
+data_label.pack(pady=(20,5), anchor="w")
 
-diagnosis_options = [
-    "MSG: HEALTHY TRACK",
-    "MSG: VOID DETECTED",
-    "MSG: COMPONENT OK / HEALTHY RESISTOR",
-    "ALERT: MAIN POWER DISCONNECTED OR REVERSED",
-    "--- SAFE-GATE SYSTEM ONLINE ---"
-]
+message_label = tk.Label(
+    control_frame,
+    text="Waiting for data...",
+    font=("Arial",10),
+    bg="#ecf0f1",
+    relief="sunken",
+    anchor="w"
+)
 
-diagnosis_menu = tk.OptionMenu(control_frame, diagnosis_var, *diagnosis_options)
-diagnosis_menu.config(font=("Arial", 10), bg="#ecf0f1")
-diagnosis_menu.pack(fill="x", pady=5)
+message_label.pack(fill="x", pady=5)
 
 diagnosis_button = tk.Button(
     control_frame,
